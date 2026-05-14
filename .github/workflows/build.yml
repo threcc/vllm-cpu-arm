@@ -1,0 +1,56 @@
+name: Build vLLM CPU ARM64
+
+on:
+  workflow_dispatch:
+    inputs:
+      vllm_version:
+        description: 'vLLM version to build'
+        required: true
+        type: choice
+        options:
+          - v0.18.0
+          - v0.18.1
+          - v0.19.0
+          - v0.19.1
+          - v0.20.0
+          - v0.20.1
+          - v0.20.2
+          - v0.21.0
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Set image tag and registry
+        env:
+          VLLM_VERSION: ${{ github.event.inputs.vllm_version }}
+          QUAY_OWNER: ${{ vars.QUAY_OWNER }}
+        run: |
+          VLLM_SHORT="${VLLM_VERSION#v}"
+          IMAGE_TAG="${VLLM_SHORT}-$(date +%Y%m%d)"
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> "$GITHUB_ENV"
+          echo "IMAGE_ID=quay.io/${QUAY_OWNER}/vllm-cpu-arm" >> "$GITHUB_ENV"
+
+      - name: Clone vLLM source
+        env:
+          VLLM_VERSION: ${{ github.event.inputs.vllm_version }}
+        run: git clone --depth 1 --branch "$VLLM_VERSION" https://github.com/vllm-project/vllm.git vllm-src
+
+      - name: Login to Quay.io
+        uses: docker/login-action@v4
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USER }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: vllm-src
+          file: vllm-src/docker/Dockerfile.cpu
+          target: vllm-openai
+          push: true
+          tags: ${{ env.IMAGE_ID }}:${{ env.IMAGE_TAG }}
+          build-args: |
+            max_jobs=4
+            PYTHON_VERSION=3.12
